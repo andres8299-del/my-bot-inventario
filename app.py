@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 from thefuzz import process, fuzz
 
-# CONFIGURACIÓN BÁSICA
-st.set_page_config(layout="wide")
-st.title("Sistema de Inventario")
+# 1. CONFIGURACIÓN BÁSICA
+st.set_page_config(page_title="Sistema de Gestión de Inventario", layout="wide")
+st.title("📦 Control de Inventario e Inteligencia de Negocio")
 
-# URL DE TU HOJA (Asegúrate de que sea pública)
+# URL DE TU HOJA (Reemplaza con tu link de Google Sheets)
 URL_HOJA = "https://docs.google.com/spreadsheets/d/1AI95MtHQAAYazuhEGusW0W7R8c-dXGBqQgjRDSwQvhU/edit?usp=sharing"
 
 def cargar_datos(url):
@@ -14,11 +14,8 @@ def cargar_datos(url):
         csv_url = url.replace('/edit?usp=sharing', '/export?format=csv').replace('/edit?usp=drivesdk', '/export?format=csv')
         data = pd.read_csv(csv_url)
         
-        # Limpieza de nombres de columnas
+        # Limpieza de nombres de columnas por posición
         data.columns = data.columns.str.strip()
-        
-        # MAPEO ESTRICTO DE 4 COLUMNAS
-        # Asignamos nombres fijos según el orden para evitar errores de lectura
         nuevos_nombres = {
             data.columns[0]: "Codigo",
             data.columns[1]: "Descripcion",
@@ -27,7 +24,7 @@ def cargar_datos(url):
         }
         data = data.rename(columns=nuevos_nombres)
         
-        # Limpieza de datos: quitar espacios y asegurar números
+        # Limpieza de datos y conversión numérica
         data['Codigo'] = data['Codigo'].astype(str).str.strip()
         data['Descripcion'] = data['Descripcion'].astype(str).str.strip()
         data['Disponible'] = pd.to_numeric(data['Disponible'], errors='coerce').fillna(0)
@@ -41,33 +38,53 @@ def cargar_datos(url):
 df = cargar_datos(URL_HOJA)
 
 if df is not None:
-    # MOSTRAR TABLA SIMPLE
+    # --- SECCIÓN 1: MÉTRICAS DE NEGOCIO ---
+    valor_total = (df['Disponible'] * df['Precio']).sum()
+    productos_bajos = df[df['Disponible'] < 5] # Alerta si hay menos de 5 unidades
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(label="💰 Valor Total del Inventario", value=f"${valor_total:,.0f}")
+    with col2:
+        st.metric(label="⚠️ Productos en Alerta (Stock Bajo)", value=len(productos_bajos))
+
+    if not productos_bajos.empty:
+        with st.expander("Ver productos por agotarse"):
+            st.write(productos_bajos[['Descripcion', 'Disponible']])
+
+    st.write("---")
+
+    # --- SECCIÓN 2: TABLA DE DATOS ---
     st.write("### Inventario Actual")
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     st.write("---")
 
-    # CHATBOT DE CONSULTA
-    st.write("### Consultar Producto")
-    if prompt := st.chat_input("Escribe el código o nombre del producto"):
+    # --- SECCIÓN 3: CHATBOT DE CONSULTA ---
+    st.write("### 💬 Asistente de Consultas")
+    if prompt := st.chat_input("Escribe el código o descripción del producto"):
         with st.chat_message("user"):
             st.write(prompt)
             
         with st.chat_message("assistant"):
-            # Buscamos en 'Codigo' y 'Descripcion' para que sea más inteligente
+            # Buscamos en Código y Descripción
             opciones = df['Codigo'].tolist() + df['Descripcion'].tolist()
             mejor_coincidencia, puntuacion = process.extractOne(prompt, opciones, scorer=fuzz.token_sort_ratio)
             
             if puntuacion > 50:
-                # Encontrar a qué fila pertenece la coincidencia
+                # Localizar la fila de la coincidencia
                 fila = df[(df['Codigo'] == mejor_coincidencia) | (df['Descripcion'] == mejor_coincidencia)].iloc[0]
                 
-                # Mostrar resultados planos
-                st.write(f"**Código:** {fila['Codigo']}")
-                st.write(f"**Descripción:** {fila['Descripcion']}")
-                st.write(f"**Disponible:** {int(fila['Disponible'])} unidades")
-                st.write(f"**Precio:** ${fila['Precio']:,}")
+                # Respuesta detallada
+                st.write(f"**Resultado para:** {mejor_coincidencia}")
+                st.markdown(f"""
+                - **Código:** {fila['Codigo']}
+                - **Descripción:** {fila['Descripcion']}
+                - **Disponible:** {int(fila['Disponible'])} unidades
+                - **Precio Unitario:** ${fila['Precio']:,}
+                - **Valor en Stock:** ${fila['Disponible'] * fila['Precio']:,}
+                """)
             else:
-                st.write("No se encontró información para esa búsqueda.")
+                st.write("No logré identificar el producto. Intenta ser más específico.")
 else:
-    st.warning("Introduce la URL de Google Sheets en el código.")
+    st.warning("Introduce la URL pública de Google Sheets en el código.")
