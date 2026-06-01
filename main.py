@@ -4,7 +4,7 @@ from st_gsheets_connection import GSheetsConnection
 st.title("🤖 Bot de Inventario")
 
 # Conectar con Google Sheets
-url = "TU_URL_DE_GOOGLE_SHEETS_AQUI"
+url = "https://docs.google.com/spreadsheets/d/1AI95MtHQAAYazuhEGusW0W7R8c-dXGBqQgjRDSwQvhU/edit?usp=sharing"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # Leer datos
