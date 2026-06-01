@@ -1,23 +1,36 @@
 import streamlit as st
-from st_gsheets_connection import GSheetsConnection
+import pandas as pd
 
-st.title("🤖 Bot de Inventario")
+st.title("📦 Mi Inventario Gratis")
 
-# Conectar con Google Sheets
-url = "https://docs.google.com/spreadsheets/d/1AI95MtHQAAYazuhEGusW0W7R8c-dXGBqQgjRDSwQvhU/edit?usp=sharing"
-conn = st.connection("gsheets", type=GSheetsConnection)
+# COPIA TU ENLACE AQUÍ
+# Ejemplo: https://docs.google.com/spreadsheets/d/1abc123/edit?usp=sharing
+URL_HOJA = "https://docs.google.com/spreadsheets/d/1AI95MtHQAAYazuhEGusW0W7R8c-dXGBqQgjRDSwQvhU/edit?usp=sharing"
 
-# Leer datos
-df = conn.read(spreadsheet=url, usecols=[0, 1])
-df = df.dropna()
+try:
+    # Este truco transforma el link de compartir en un link de datos puros
+    csv_url = URL_HOJA.replace('/edit?usp=sharing', '/export?format=csv')
+    
+    # El bot lee la hoja de cálculo
+    df = pd.read_csv(csv_url)
+    
+    st.write("### Inventario en tiempo real:")
+    st.dataframe(df)
+    
+    # Chat de consulta
+    query = st.chat_input("¿Qué producto buscas?")
+    if query:
+        with st.chat_message("user"):
+            st.write(query)
+        
+        # Lógica simple de búsqueda
+        resultado = df[df['Producto'].str.contains(query, case=False, na=False)]
+        
+        with st.chat_message("assistant"):
+            if not resultado.empty:
+                st.write(f"Encontré esto: {resultado.iloc[0]['Cantidad']} unidades.")
+            else:
+                st.write("No encuentro ese producto en la lista.")
 
-# Mostrar Inventario
-st.subheader("Inventario Actual")
-st.table(df)
-
-# Chat simple
-prompt = st.chat_input("Escribe: sumar Clavos 20")
-
-if prompt:
-    st.write(f"Has pedido: {prompt}")
-    st.info("Para procesar cambios, conectaremos la edición en el siguiente paso.")
+except Exception as e:
+    st.warning("Pega el enlace de tu hoja arriba para empezar.")
