@@ -42,7 +42,7 @@ def cargar_datos(url):
         return None
 
 # 3. EJECUCIÓN Y VISUALIZACIÓN
-df = cargar_datos(https://docs.google.com/spreadsheets/d/1AI95MtHQAAYazuhEGusW0W7R8c-dXGBqQgjRDSwQvhU/edit?usp=sharing)
+df = cargar_datos(URL_HOJA)
 
 if df is not None:
     # Dividir la pantalla en dos columnas
