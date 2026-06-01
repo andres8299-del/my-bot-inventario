@@ -1,89 +1,77 @@
 import streamlit as st
 import pandas as pd
+from thefuzz import process, fuzz
 
-# 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="Gestor de Inventario Pro", layout="wide")
+# 1. CONFIGURACIÓN E INTERFAZ
+st.set_page_config(page_title="Bot Inventario Inteligente", layout="wide")
 
-# Estilo personalizado para que se vea profesional
-st.markdown("""
-    <style>
-    .main { background-color: #f5f7f9; }
-    .stDataFrame { border: 1px solid #e6e9ef; border-radius: 10px; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("🤖 Asistente de Inventario Inteligente")
+st.markdown("---")
 
-st.title("📦 Sistema de Control de Inventario Inteligente")
-st.info("Conectado en tiempo real con Google Sheets")
-
-# 2. COLOCA AQUÍ TU ENLACE DE GOOGLE SHEETS
+# 2. ENLACE DE TU HOJA (Cámbialo por el tuyo)
 URL_HOJA = "https://docs.google.com/spreadsheets/d/1AI95MtHQAAYazuhEGusW0W7R8c-dXGBqQgjRDSwQvhU/edit?usp=sharing"
 
 def cargar_datos(url):
-    # Transformación universal de URL a formato de datos (CSV)
     try:
-        if "/edit" in url:
-            base_url = url.split("/edit")[0]
-            csv_url = f"{base_url}/export?format=csv"
-        else:
-            csv_url = url
-        
+        csv_url = url.replace('/edit?usp=sharing', '/export?format=csv').replace('/edit?usp=drivesdk', '/export?format=csv')
         data = pd.read_csv(csv_url)
-        # Limpieza automática de nombres de columnas
         data.columns = data.columns.str.strip()
-        
-        # Adaptación Universal: Forzamos nombres internos para que el código no falle
-        # Independientemente de cómo los escribas en Excel, el código los entenderá
+        # Forzar nombres de columnas internos
         if len(data.columns) >= 2:
             data = data.rename(columns={data.columns[0]: "Producto", data.columns[1]: "Cantidad"})
-        
         return data
-    except Exception as e:
-        st.error(f"Error técnico: {e}")
+    except:
         return None
 
-# 3. EJECUCIÓN Y VISUALIZACIÓN
 df = cargar_datos(URL_HOJA)
 
 if df is not None:
-    # Dividir la pantalla en dos columnas
-    col1, col2 = st.columns([1, 1], gap="large")
+    # --- BARRA LATERAL CON OPCIONES (AUTOCOMPLETADO) ---
+    st.sidebar.header("🔍 Buscador Rápido")
+    lista_productos = df['Producto'].tolist()
+    seleccion = st.sidebar.selectbox("Selecciona un producto de la lista:", [""] + lista_productos)
 
+    if seleccion:
+        stock = df[df['Producto'] == seleccion]['Cantidad'].values[0]
+        st.sidebar.success(f"Stock de {seleccion}: {stock} unidades.")
+
+    # --- CUERPO PRINCIPAL: TABLA Y GRÁFICA ---
+    col1, col2 = st.columns([1, 1])
     with col1:
-        st.subheader("📋 Inventario Actual")
+        st.subheader("📋 Lista Total")
         st.dataframe(df, use_container_width=True, hide_index=True)
-
     with col2:
-        st.subheader("📈 Análisis Visual de Stock")
-        try:
-            # Creamos la gráfica usando los nombres adaptados
-            st.bar_chart(df.set_index("Producto")["Cantidad"])
-        except:
-            st.warning("Asegúrate de que la segunda columna de tu Excel tenga números.")
+        st.subheader("📊 Visualización")
+        st.bar_chart(df.set_index("Producto")["Cantidad"])
 
     st.markdown("---")
 
-    # 4. CHATBOT ADAPTATIVO
-    st.subheader("💬 Asistente de Consultas")
+    # --- CHATBOT CON LÓGICA DIFUSA (FUZZY LOGIC) ---
+    st.subheader("💬 Chatea con el Inventario")
+    st.write("*Puedes escribir con errores o solo una parte del nombre.*")
     
-    if prompt := st.chat_input("¿Qué producto deseas consultar?"):
+    if prompt := st.chat_input("Ej: ¿Cuantos flltros hay?"):
         with st.chat_message("user"):
             st.write(prompt)
             
         with st.chat_message("assistant"):
-            texto = prompt.lower()
-            # Buscamos en la columna "Producto" (que ya adaptamos arriba)
-            busqueda = df[df['Producto'].astype(str).str.contains(texto, case=False, na=False)]
+            # 1. Buscar coincidencia exacta o parcial
+            # 2. Usar 'thefuzz' para encontrar el nombre más parecido
+            mejor_coincidencia, puntuacion = process.extractOne(prompt, lista_productos, scorer=fuzz.partial_token_set_ratio)
             
-            if not busqueda.empty:
-                p = busqueda.iloc[0]['Producto']
-                c = busqueda.iloc[0]['Cantidad']
-                st.write(f"He revisado la base de datos: del producto **{p}** actualmente tenemos **{c}** unidades.")
+            if puntuacion > 60: # Si se parece en más de un 60%
+                fila = df[df['Producto'] == mejor_coincidencia]
+                nombre_real = fila['Producto'].values[0]
+                cantidad = fila['Cantidad'].values[0]
                 
-                if c < 5:
-                    st.error("⚠️ ALERTA: Stock críticamente bajo.")
-                elif c < 20:
-                    st.warning("⚠️ NOTA: Stock próximo a agotarse.")
+                if puntuacion < 95:
+                    st.write(f"No encontré '{prompt}', pero quizás quisiste decir: **{nombre_real}**.")
+                
+                st.write(f"📦 El stock de **{nombre_real}** es de **{cantidad}** unidades.")
+                
+                if cantidad < 10:
+                    st.error("⚠️ ¡Quedan pocas unidades!")
             else:
-                st.write("No encuentro ese producto exacto. ¿Podrías verificar el nombre?")
+                st.write("No logré encontrar nada parecido. Prueba seleccionando el producto en el menú de la izquierda.")
 else:
-    st.warning("Esperando conexión con la base de datos... Revisa el enlace en el código.")
+    st.error("Error de conexión. Verifica que el link sea público.")
