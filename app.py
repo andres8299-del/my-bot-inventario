@@ -4,33 +4,37 @@ from thefuzz import process, fuzz
 
 # CONFIGURACIÓN
 st.set_page_config(page_title="Bot Inventario Inteligente", layout="wide")
-st.title("🤖 Asistente de Inventario Inteligente")
+st.title("🤖 Asistente de Inventario con Descripción")
 
+# ⚠️ PEGA TU ENLACE AQUÍ
 URL_HOJA = "https://docs.google.com/spreadsheets/d/1AI95MtHQAAYazuhEGusW0W7R8c-dXGBqQgjRDSwQvhU/edit?usp=sharing"
 
 def cargar_datos(url):
     try:
-        # Convertir link a CSV
         csv_url = url.replace('/edit?usp=sharing', '/export?format=csv').replace('/edit?usp=drivesdk', '/export?format=csv')
         data = pd.read_csv(csv_url)
         
-        # --- LIMPIEZA PROFUNDA DE COLUMNAS ---
+        # Limpieza de nombres de columnas
         data.columns = data.columns.str.strip()
-        if len(data.columns) >= 2:
-            data = data.rename(columns={data.columns[0]: "Producto", data.columns[1]: "Cantidad"})
         
-        # --- LIMPIEZA PROFUNDA DE DATOS ---
-        # Eliminamos espacios en blanco al inicio/final de los nombres de productos
+        # MAPEO INTELIGENTE:
+        # Asumimos: Columna 0 = Producto, Columna 1 = Cantidad, Columna 2 = Descripción
+        nuevos_nombres = {}
+        if len(data.columns) >= 1: nuevos_nombres[data.columns[0]] = "Producto"
+        if len(data.columns) >= 2: nuevos_nombres[data.columns[1]] = "Cantidad"
+        if len(data.columns) >= 3: nuevos_nombres[data.columns[2]] = "Descripcion"
+        
+        data = data.rename(columns=nuevos_nombres)
+        
+        # Limpieza de datos
         data['Producto'] = data['Producto'].astype(str).str.strip()
-        # Aseguramos que la cantidad sea numérica
+        if 'Descripcion' in data.columns:
+            data['Descripcion'] = data['Descripcion'].astype(str).str.strip().replace('nan', 'Sin descripción')
         data['Cantidad'] = pd.to_numeric(data['Cantidad'], errors='coerce').fillna(0)
-        
-        # Quitamos filas que tengan el producto vacío
-        data = data[data['Producto'] != "nan"]
         
         return data
     except Exception as e:
-        st.error(f"Error al leer la hoja: {e}")
+        st.error(f"Error al conectar: {e}")
         return None
 
 df = cargar_datos(URL_HOJA)
@@ -38,58 +42,46 @@ df = cargar_datos(URL_HOJA)
 if df is not None:
     lista_productos = df['Producto'].tolist()
 
-    # --- BARRA LATERAL (OPCIONES) ---
-    st.sidebar.header("🔍 Buscador")
-    seleccion = st.sidebar.selectbox("Selecciona de la lista:", [""] + lista_productos)
-    if seleccion:
-        stock = df[df['Producto'] == seleccion]['Cantidad'].values[0]
-        st.sidebar.metric(label=f"Stock de {seleccion}", value=int(stock))
-
     # --- VISUALIZACIÓN ---
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 1])
     with col1:
-        st.subheader("📋 Inventario")
+        st.subheader("📋 Inventario Completo")
         st.dataframe(df, use_container_width=True, hide_index=True)
     with col2:
-        st.subheader("📊 Gráfico")
+        st.subheader("📊 Niveles de Stock")
         st.bar_chart(df.set_index("Producto")["Cantidad"])
 
-    # --- CHATBOT CORREGIDO ---
+    # --- CHATBOT CON DESCRIPCIÓN ---
     st.markdown("---")
-    st.subheader("💬 Consulta al Bot")
+    st.subheader("💬 Consulta detalles del producto")
     
     if prompt := st.chat_input("¿Qué producto buscas?"):
         with st.chat_message("user"):
             st.write(prompt)
             
         with st.chat_message("assistant"):
-            # Limpiar la entrada del usuario
-            entrada_usuario = prompt.strip()
+            entrada = prompt.strip()
             
-            # 1. INTENTO DE COINCIDENCIA EXACTA (Ignorando mayúsculas/minúsculas)
-            coincidencia_directa = df[df['Producto'].str.lower() == entrada_usuario.lower()]
+            # Buscador inteligente (Fuzzy)
+            mejor_coincidencia, puntuacion = process.extractOne(
+                entrada, lista_productos, scorer=fuzz.token_sort_ratio
+            )
             
-            if not coincidencia_directa.empty:
-                nombre = coincidencia_directa.iloc[0]['Producto']
-                stock = coincidencia_directa.iloc[0]['Cantidad']
-                st.write(f"✅ Encontrado: Hay **{int(stock)}** unidades de **{nombre}**.")
-            
-            else:
-                # 2. SI NO ES EXACTO, USAR LÓGICA DIFUSA
-                mejor_coincidencia, puntuacion = process.extractOne(
-                    entrada_usuario, 
-                    lista_productos, 
-                    scorer=fuzz.token_sort_ratio
-                )
+            if puntuacion > 50:
+                fila = df[df['Producto'] == mejor_coincidencia].iloc[0]
+                nombre = fila['Producto']
+                stock = int(fila['Cantidad'])
                 
-                if puntuacion > 50: # Umbral de confianza
-                    fila = df[df['Producto'] == mejor_coincidencia]
-                    stock = fila['Cantidad'].values[0]
-                    
-                    st.write(f"No encontré exactamente '{entrada_usuario}', pero quizás quisiste decir: **{mejor_coincidencia}**.")
-                    st.write(f"📦 El stock de **{mejor_coincidencia}** es de **{int(stock)}** unidades.")
-                else:
-                    st.write("❌ No logré encontrar ese producto. Intenta usar palabras más cortas o revisa la tabla de arriba.")
-
+                # Verificar si existe la columna descripción
+                desc = fila['Descripcion'] if 'Descripcion' in fila else "No disponible"
+                
+                st.write(f"### {nombre}")
+                st.write(f"📦 **Stock:** {stock} unidades")
+                st.write(f"📝 **Descripción:** {desc}")
+                
+                if stock < 5:
+                    st.error("⚠️ ¡Quedan muy pocas unidades!")
+            else:
+                st.write("❌ No encontré un producto similar. Revisa la tabla superior.")
 else:
-    st.error("Revisa que el link de Google Sheets sea público y el código tenga la URL correcta.")
+    st.warning("Configura el enlace de Google Sheets en el código.")
