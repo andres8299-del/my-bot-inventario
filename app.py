@@ -7,7 +7,7 @@ st.set_page_config(page_title="Inventario Preciso", layout="wide")
 st.title("📦 Sistema de Inventario de Alta Precisión")
 
 # URL DE TU HOJA (Reemplaza con tu link)
-URL_HOJA = "TU_ENLACE_AQUI"
+URL_HOJA = "https://docs.google.com/spreadsheets/d/1AI95MtHQAAYazuhEGusW0W7R8c-dXGBqQgjRDSwQvhU/edit?usp=sharing"
 
 @st.cache_data(ttl=30)
 def cargar_datos(url):
